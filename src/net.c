@@ -161,6 +161,7 @@ int net__socket_accept(struct mosquitto_db *db, mosq_sock_t listensock)
 					new_context->want_write = true;
 					bio = BIO_new_socket(new_sock, BIO_NOCLOSE);
 					SSL_set_bio(new_context->ssl, bio, bio);
+					ERR_clear_error();
 					rc = SSL_accept(new_context->ssl);
 					if(rc != 1){
 						rc = SSL_get_error(new_context->ssl, rc);
@@ -298,7 +299,7 @@ static int mosquitto__tls_server_ctx(struct mosquitto__listener *listener)
 #endif
 
 #ifdef WITH_EC
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L && OPENSSL_VERSION_NUMBER < 0x10100000L
 	SSL_CTX_set_ecdh_auto(listener->ssl_ctx, 1);
 #elif OPENSSL_VERSION_NUMBER >= 0x10000000L && OPENSSL_VERSION_NUMBER < 0x10002000L
 	ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);

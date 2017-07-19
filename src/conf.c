@@ -36,7 +36,7 @@ Contributors:
 #endif
 
 #if !defined(WIN32) && !defined(__CYGWIN__)
-#  include <sys/syslog.h>
+#  include <syslog.h>
 #endif
 
 #include "mosquitto_broker_internal.h"
@@ -706,8 +706,16 @@ int config__read_file_core(struct mosquitto__config *config, bool reload, const 
 					cur_auth_plugin->path = NULL;
 					cur_auth_plugin->options = NULL;
 					cur_auth_plugin->option_count = 0;
+					cur_auth_plugin->deny_special_chars = true;
 					config->auth_plugin_count++;
 					if(conf__parse_string(&token, "auth_plugin", &cur_auth_plugin->path, saveptr)) return MOSQ_ERR_INVAL;
+				}else if(!strcmp(token, "auth_plugin_deny_special_chars")){
+					if(reload) continue; // Auth plugin not currently valid for reloading.
+					if(!cur_auth_plugin){
+						log__printf(NULL, MOSQ_LOG_ERR, "Error: An auth_plugin_deny_special_chars option exists in the config file without an auth_plugin.");
+						return MOSQ_ERR_INVAL;
+					}
+					if(conf__parse_bool(&token, "auth_plugin_deny_special_chars", &cur_auth_plugin->deny_special_chars, saveptr)) return MOSQ_ERR_INVAL;
 				}else if(!strcmp(token, "auto_id_prefix")){
 					if(conf__parse_string(&token, "auto_id_prefix", &config->auto_id_prefix, saveptr)) return MOSQ_ERR_INVAL;
 					if(config->auto_id_prefix){
@@ -953,6 +961,14 @@ int config__read_file_core(struct mosquitto__config *config, bool reload, const 
 					if(reload) continue; // FIXME
 					token = strtok_r(NULL, " ", &saveptr);
 					if(token){
+						/* Check for existing bridge name. */
+						for(i=0; i<config->bridge_count; i++){
+							if(!strcmp(config->bridges[i].name, token)){
+								log__printf(NULL, MOSQ_LOG_ERR, "Error: Duplicate bridge name \"%s\".", token);
+								return MOSQ_ERR_INVAL;
+							}
+						}
+
 						config->bridge_count++;
 						config->bridges = mosquitto__realloc(config->bridges, config->bridge_count*sizeof(struct mosquitto__bridge));
 						if(!config->bridges){
@@ -968,6 +984,7 @@ int config__read_file_core(struct mosquitto__config *config, bool reload, const 
 						}
 						cur_bridge->keepalive = 60;
 						cur_bridge->notifications = true;
+						cur_bridge->notifications_local_only = false;
 						cur_bridge->start_type = bst_automatic;
 						cur_bridge->idle_timeout = 60;
 						cur_bridge->restart_timeout = 30;
@@ -1354,6 +1371,17 @@ int config__read_file_core(struct mosquitto__config *config, bool reload, const 
 					}
 					if(conf__parse_bool(&token, "notifications", &cur_bridge->notifications, saveptr)) return MOSQ_ERR_INVAL;
 #else
+					log__printf(NULL, MOSQ_LOG_WARNING, "Warning: Bridge support not available.");
+#endif
+				}else if(!strcmp(token, "notifications_local_only")){
+#ifdef WITH_BRIDGE
+					if(reload) continue; // FIXME
+					if(!cur_bridge){
+						log__printf(NULL, MOSQ_LOG_ERR, "Error: Invalid bridge configuration");
+						return MOSQ_ERR_INVAL;
+					}
+					if(conf__parse_bool(&token, "notifications_local_only", &cur_bridge->notifications_local_only, saveptr)) return MOSQ_ERR_INVAL;
+#else					
 					log__printf(NULL, MOSQ_LOG_WARNING, "Warning: Bridge support not available.");
 #endif
 				}else if(!strcmp(token, "notification_topic")){
@@ -1805,7 +1833,7 @@ int config__read_file(struct mosquitto__config *config, bool reload, const char 
 	int rc;
 	FILE *fptr = NULL;
 
-	fptr = mosquitto__fopen(file, "rt");
+	fptr = mosquitto__fopen(file, "rt", false);
 	if(!fptr){
 		log__printf(NULL, MOSQ_LOG_ERR, "Error: Unable to open config file %s\n", file);
 		return 1;

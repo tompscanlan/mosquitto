@@ -33,6 +33,7 @@ Contributors:
 #  include "mosquitto_broker_internal.h"
 #endif
 #include "mosquitto_internal.h"
+#include "logging_mosq.h"
 #include "tls_mosq.h"
 
 extern int tls_ex_index_mosq;
@@ -58,10 +59,14 @@ int mosquitto__server_certificate_verify(int preverify_ok, X509_STORE_CTX *ctx)
 			cert = X509_STORE_CTX_get_current_cert(ctx);
 			/* This is the peer certificate, all others are upwards in the chain. */
 #if defined(WITH_BROKER)
-			return mosquitto__verify_certificate_hostname(cert, mosq->bridge->addresses[mosq->bridge->cur_address].address);
+			preverify_ok = mosquitto__verify_certificate_hostname(cert, mosq->bridge->addresses[mosq->bridge->cur_address].address);
 #else
-			return mosquitto__verify_certificate_hostname(cert, mosq->host);
+			preverify_ok = mosquitto__verify_certificate_hostname(cert, mosq->host);
 #endif
+			if (preverify_ok != 1) {
+				log__printf(mosq, MOSQ_LOG_ERR, "Error: host name verification failed.");
+			}
+			return preverify_ok;
 		}else{
 			return preverify_ok;
 		}
@@ -129,6 +134,7 @@ int mosquitto__verify_certificate_hostname(X509 *cert, const char *hostname)
 			if(nval->type == GEN_DNS){
 				data = ASN1_STRING_data(nval->d.dNSName);
 				if(data && !mosquitto__cmp_hostname_wildcard((char *)data, hostname)){
+					sk_GENERAL_NAME_pop_free(san, GENERAL_NAME_free);
 					return 1;
 				}
 				have_san_dns = true;
@@ -136,20 +142,24 @@ int mosquitto__verify_certificate_hostname(X509 *cert, const char *hostname)
 				data = ASN1_STRING_data(nval->d.iPAddress);
 				if(nval->d.iPAddress->length == 4 && ipv4_ok){
 					if(!memcmp(ipv4_addr, data, 4)){
+						sk_GENERAL_NAME_pop_free(san, GENERAL_NAME_free);
 						return 1;
 					}
 				}else if(nval->d.iPAddress->length == 16 && ipv6_ok){
 					if(!memcmp(ipv6_addr, data, 16)){
+						sk_GENERAL_NAME_pop_free(san, GENERAL_NAME_free);
 						return 1;
 					}
 				}
 			}
 		}
+		sk_GENERAL_NAME_pop_free(san, GENERAL_NAME_free);
 		if(have_san_dns){
 			/* Only check CN if subjectAltName DNS entry does not exist. */
 			return 0;
 		}
 	}
+
 	subj = X509_get_subject_name(cert);
 	if(X509_NAME_get_text_by_NID(subj, NID_commonName, name, sizeof(name)) > 0){
 		name[sizeof(name) - 1] = '\0';

@@ -4,9 +4,14 @@ DIRS=lib client src
 DOCDIRS=man
 DISTDIRS=man
 
-.PHONY : all mosquitto docs binary clean reallyclean test install uninstall dist sign copy
+.PHONY : all mosquitto api docs binary clean reallyclean test install uninstall dist sign copy
 
 all : $(MAKE_ALL)
+
+api :
+	mkdir -p api p
+	naturaldocs -o HTML api -i lib -p p
+	rm -rf p
 
 docs :
 	set -e; for d in ${DOCDIRS}; do $(MAKE) -C $${d}; done
@@ -36,7 +41,9 @@ test : mosquitto
 
 install : mosquitto
 	set -e; for d in ${DIRS}; do $(MAKE) -C $${d} install; done
+ifeq ($(WITH_DOCS),yes)
 	set -e; for d in ${DOCDIRS}; do $(MAKE) -C $${d} install; done
+endif
 	$(INSTALL) -d ${DESTDIR}/etc/mosquitto
 	$(INSTALL) -m 644 mosquitto.conf ${DESTDIR}/etc/mosquitto/mosquitto.conf.example
 	$(INSTALL) -m 644 aclfile.example ${DESTDIR}/etc/mosquitto/aclfile.example

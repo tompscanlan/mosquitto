@@ -14,8 +14,8 @@ Contributors:
    Roger Light - initial implementation and documentation.
 */
 
-#ifndef MQTT3_H
-#define MQTT3_H
+#ifndef MOSQUITTO_BROKER_INTERNAL_H
+#define MOSQUITTO_BROKER_INTERNAL_H
 
 #include "config.h"
 #include <stdio.h>
@@ -31,6 +31,7 @@ Contributors:
 #    define libwebsocket_write(A, B, C, D) lws_write((A), (B), (C), (D))
 #    define libwebsocket_get_socket_fd(A) lws_get_socket_fd((A))
 #    define libwebsockets_return_http_status(A, B, C, D) lws_return_http_status((B), (C), (D))
+#    define libwebsockets_get_protocol(A) lws_get_protocol((A))
 
 #    define libwebsocket_context lws_context
 #    define libwebsocket_protocols lws_protocols
@@ -173,6 +174,7 @@ struct mosquitto__auth_plugin_config
 	char *path;
 	struct mosquitto_opt *options;
 	int option_count;
+	bool deny_special_chars;
 };
 
 struct mosquitto__config {
@@ -422,6 +424,7 @@ struct mosquitto__bridge{
 	char *local_username;
 	char *local_password;
 	bool notifications;
+	bool notifications_local_only;
 	char *notification_topic;
 	enum mosquitto_bridge_start_type start_type;
 	int idle_timeout;
@@ -476,6 +479,7 @@ int config__parse_args(struct mosquitto__config *config, int argc, char *argv[])
 int config__read(struct mosquitto__config *config, bool reload);
 /* Free all config data. */
 void config__cleanup(struct mosquitto__config *config);
+int config__get_dir_files(const char *include_dir, char ***files, int *file_count);
 
 int drop_privileges(struct mosquitto__config *config, bool temporary);
 int restore_privileges(void);
@@ -554,6 +558,7 @@ void context__cleanup(struct mosquitto_db *db, struct mosquitto *context, bool d
 void context__disconnect(struct mosquitto_db *db, struct mosquitto *context);
 void context__add_to_disused(struct mosquitto_db *db, struct mosquitto *context);
 void context__free_disused(struct mosquitto_db *db);
+void context__send_will(struct mosquitto_db *db, struct mosquitto *context);
 
 /* ============================================================
  * Logging functions
@@ -568,6 +573,8 @@ int log__printf(struct mosquitto *mosq, int level, const char *fmt, ...) __attri
 #ifdef WITH_BRIDGE
 int bridge__new(struct mosquitto_db *db, struct mosquitto__bridge *bridge);
 int bridge__connect(struct mosquitto_db *db, struct mosquitto *context);
+int bridge__connect_step1(struct mosquitto_db *db, struct mosquitto *context);
+int bridge__connect_step2(struct mosquitto_db *db, struct mosquitto *context);
 void bridge__packet_cleanup(struct mosquitto *context);
 #endif
 

@@ -4,6 +4,7 @@ include_directories(${mosquitto_SOURCE_DIR} ${mosquitto_SOURCE_DIR}/src
 
 set (MOSQ_SRCS
 	conf.c
+	conf_includedir.c
 	context.c
 	database.c
 	handle_connack.c
@@ -27,6 +28,7 @@ set (MOSQ_SRCS
 	../lib/net_mosq.c ../lib/net_mosq.h
 	../lib/packet_mosq.c ../lib/packet_mosq.h
 	persist.c persist.h
+	plugin.c
 	read_handle.c
 	../lib/read_handle.h
 	subs.c
@@ -112,11 +114,25 @@ add_executable(mosquitto ${MOSQ_SRCS})
 
 set (MOSQ_LIBS ${MOSQ_LIBS} ${OPENSSL_LIBRARIES})
 
+# Check for getaddrinfo_a
+include(CheckLibraryExists)
+check_library_exists(anl getaddrinfo_a  "" HAVE_GETADDRINFO_A)
+if (HAVE_GETADDRINFO_A)
+	add_definitions(-DHAVE_GETADDRINFO_A)
+	set (MOSQ_LIBS ${MOSQ_LIBS} anl)
+endif (HAVE_GETADDRINFO_A)
+
+
+
 if (UNIX)
 	if (APPLE)
 		set (MOSQ_LIBS ${MOSQ_LIBS} dl m)
 	else (APPLE)
-		set (MOSQ_LIBS ${MOSQ_LIBS} rt dl m)
+		set (MOSQ_LIBS ${MOSQ_LIBS} dl m)
+		find_library(LIBRT rt)
+		if (LIBRT)
+			set (MOSQ_LIBS ${MOSQ_LIBS} rt)
+		endif (LIBRT)
 	endif (APPLE)
 endif (UNIX)
 

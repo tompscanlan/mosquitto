@@ -196,6 +196,13 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 		rc = 1;
 		goto handle_connect_error;
 	}
+	if(context->protocol == mosq_p_mqtt311){
+		if((connect_flags & 0x01) != 0x00){
+			rc = MOSQ_ERR_PROTOCOL;
+			goto handle_connect_error;
+		}
+	}
+
 	clean_session = (connect_flags & 0x02) >> 1;
 	will = connect_flags & 0x04;
 	will_qos = (connect_flags & 0x18) >> 3;
@@ -205,7 +212,7 @@ int handle__connect(struct mosquitto_db *db, struct mosquitto *context)
 		rc = MOSQ_ERR_PROTOCOL;
 		goto handle_connect_error;
 	}
-	will_retain = connect_flags & 0x20;
+	will_retain = ((connect_flags & 0x20) == 0x20); // Temporary hack because MSVC<1800 doesn't have stdbool.h.
 	password_flag = connect_flags & 0x40;
 	username_flag = connect_flags & 0x80;
 

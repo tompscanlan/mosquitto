@@ -353,6 +353,7 @@ int mosquitto_acl_check(struct mosquitto_db *db, struct mosquitto *context, cons
 	int rc;
 	int i;
 	struct mosquitto_acl_msg msg;
+	const char *username;
 
 	if(!context->id){
 		return MOSQ_ERR_ACL_DENIED;
@@ -369,10 +370,29 @@ int mosquitto_acl_check(struct mosquitto_db *db, struct mosquitto *context, cons
 	for(i=0; i<db->auth_plugin_count; i++){
 		memset(&msg, 0, sizeof(msg));
 		msg.topic = topic;
+
+		username = mosquitto_client_username(context);
+		if(db->config->auth_plugins[i].deny_special_chars == true){
+			/* Check whether the client id or username contains a +, # or / and if
+			* so deny access.
+			*
+			* Do this check for every message regardless, we have to protect the
+			* plugins against possible pattern based attacks.
+			*/
+			if(username && strpbrk(username, "+#")){
+				log__printf(NULL, MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous username \"%s\"", username);
+				return MOSQ_ERR_ACL_DENIED;
+			}
+			if(context->id && strpbrk(context->id, "+#")){
+				log__printf(NULL, MOSQ_LOG_NOTICE, "ACL denying access to client with dangerous client id \"%s\"", context->id);
+				return MOSQ_ERR_ACL_DENIED;
+			}
+		}
+
 		if(db->auth_plugins[i].version == 3){
 			rc = db->auth_plugins[i].acl_check_v3(db->auth_plugins[i].user_data, access, context, &msg);
 		}else if(db->auth_plugins[i].version == 2){
-			rc = db->auth_plugins[i].acl_check_v2(db->auth_plugins[i].user_data, context->id, mosquitto_client_username(context), topic, access);
+			rc = db->auth_plugins[i].acl_check_v2(db->auth_plugins[i].user_data, context->id, username, topic, access);
 		}else{
 			rc = MOSQ_ERR_INVAL;
 		}

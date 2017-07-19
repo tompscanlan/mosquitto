@@ -317,11 +317,12 @@ int client_config_load(struct mosq_config *cfg, int pub_or_sub, int argc, char *
 	}
 #endif
 
+	if(cfg->clean_session == false && (cfg->id_prefix || !cfg->id)){
+		if(!cfg->quiet) fprintf(stderr, "Error: You must provide a client id if you are using the -c option.\n");
+		return 1;
+	}
+
 	if(pub_or_sub == CLIENT_SUB){
-		if(cfg->clean_session == false && (cfg->id_prefix || !cfg->id)){
-			if(!cfg->quiet) fprintf(stderr, "Error: You must provide a client id if you are using the -c option.\n");
-			return 1;
-		}
 		if(cfg->topic_count == 0){
 			if(!cfg->quiet) fprintf(stderr, "Error: You must specify a topic to subscribe to.\n");
 			return 1;
@@ -834,9 +835,6 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 			}
 			i++;
 		}else if(!strcmp(argv[i], "-c") || !strcmp(argv[i], "--disable-clean-session")){
-			if(pub_or_sub == CLIENT_PUB){
-				goto unknown_option;
-			}
 			cfg->clean_session = false;
 		}else if(!strcmp(argv[i], "-N")){
 			if(pub_or_sub == CLIENT_PUB){
@@ -902,7 +900,7 @@ int client_opts_set(struct mosquitto *mosq, struct mosq_config *cfg)
 		return 1;
 	}
 #  endif
-	if(cfg->tls_version && mosquitto_tls_opts_set(mosq, 1, cfg->tls_version, cfg->ciphers)){
+	if((cfg->tls_version || cfg->ciphers) && mosquitto_tls_opts_set(mosq, 1, cfg->tls_version, cfg->ciphers)){
 		if(!cfg->quiet) fprintf(stderr, "Error: Problem setting TLS options.\n");
 		mosquitto_lib_cleanup();
 		return 1;
@@ -939,14 +937,14 @@ int client_id_generate(struct mosq_config *cfg, const char *id_base)
 		hostname[0] = '\0';
 		gethostname(hostname, 256);
 		hostname[255] = '\0';
-		len = strlen(id_base) + strlen("/-") + 6 + strlen(hostname);
+		len = strlen(id_base) + strlen("|-") + 6 + strlen(hostname);
 		cfg->id = malloc(len);
 		if(!cfg->id){
 			if(!cfg->quiet) fprintf(stderr, "Error: Out of memory.\n");
 			mosquitto_lib_cleanup();
 			return 1;
 		}
-		snprintf(cfg->id, len, "%s/%d-%s", id_base, getpid(), hostname);
+		snprintf(cfg->id, len, "%s|%d-%s", id_base, getpid(), hostname);
 		if(strlen(cfg->id) > MOSQ_MQTT_ID_MAX_LENGTH){
 			/* Enforce maximum client id length of 23 characters */
 			cfg->id[MOSQ_MQTT_ID_MAX_LENGTH] = '\0';
@@ -972,10 +970,11 @@ int client_connect(struct mosquitto *mosq, struct mosq_config *cfg)
 		}else{
 			port = 1883;
 		}
-	}else{
+	}else
+#endif
+	{
 		port = cfg->port;
 	}
-#endif
 
 #ifdef WITH_SRV
 	if(cfg->use_srv){
