@@ -269,7 +269,7 @@ int main(int argc, char *argv[])
 	}
 
 	if(config.daemon && config.pid_file){
-		pid = _mosquitto_fopen(config.pid_file, "wt");
+		pid = _mosquitto_fopen(config.pid_file, "wt", false);
 		if(pid){
 			fprintf(pid, "%d", getpid());
 			fclose(pid);
@@ -287,7 +287,10 @@ int main(int argc, char *argv[])
 
 	/* Initialise logging only after initialising the database in case we're
 	 * logging to topics */
-	mqtt3_log_init(&config);
+	if(mqtt3_log_init(&config)){
+		rc = 1;
+		return rc;
+	}
 	_mosquitto_log_printf(NULL, MOSQ_LOG_INFO, "mosquitto version %s (build date %s) starting", VERSION, TIMESTAMP);
 	if(config.config_file){
 		_mosquitto_log_printf(NULL, MOSQ_LOG_INFO, "Config loaded from %s.", config.config_file);
@@ -384,12 +387,6 @@ int main(int argc, char *argv[])
 	_mosquitto_log_printf(NULL, MOSQ_LOG_INFO, "mosquitto version %s terminating", VERSION);
 	mqtt3_log_close(&config);
 
-#ifdef WITH_PERSISTENCE
-	if(config.persistence){
-		mqtt3_db_backup(&int_db, true);
-	}
-#endif
-
 #ifdef WITH_WEBSOCKETS
 	for(i=0; i<int_db.config->listener_count; i++){
 		if(int_db.config->listeners[i].ws_context){
@@ -398,6 +395,16 @@ int main(int argc, char *argv[])
 		if(int_db.config->listeners[i].ws_protocol){
 			_mosquitto_free(int_db.config->listeners[i].ws_protocol);
 		}
+	}
+#endif
+
+	HASH_ITER(hh_id, int_db.contexts_by_id, ctxt, ctxt_tmp){
+		mqtt3_context_send_will(&int_db, ctxt);
+	}
+
+#ifdef WITH_PERSISTENCE
+	if(config.persistence){
+		mqtt3_db_backup(&int_db, true);
 	}
 #endif
 

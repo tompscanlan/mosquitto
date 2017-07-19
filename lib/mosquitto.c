@@ -520,6 +520,10 @@ static int _mosquitto_reconnect(struct mosquitto *mosq, bool blocking)
 
 	_mosquitto_messages_reconnect_reset(mosq);
 
+	if(mosq->sock != INVALID_SOCKET){
+        _mosquitto_socket_close(mosq); //close socket
+    }
+
 #ifdef WITH_SOCKS
 	if(mosq->socks5_host){
 		rc = _mosquitto_socket_connect(mosq, mosq->socks5_host, mosq->socks5_port, mosq->bind_address, blocking);
@@ -649,7 +653,7 @@ int mosquitto_tls_set(struct mosquitto *mosq, const char *cafile, const char *ca
 	if(!mosq || (!cafile && !capath) || (certfile && !keyfile) || (!certfile && keyfile)) return MOSQ_ERR_INVAL;
 
 	if(cafile){
-		fptr = _mosquitto_fopen(cafile, "rt");
+		fptr = _mosquitto_fopen(cafile, "rt", false);
 		if(fptr){
 			fclose(fptr);
 		}else{
@@ -676,7 +680,7 @@ int mosquitto_tls_set(struct mosquitto *mosq, const char *cafile, const char *ca
 	}
 
 	if(certfile){
-		fptr = _mosquitto_fopen(certfile, "rt");
+		fptr = _mosquitto_fopen(certfile, "rt", false);
 		if(fptr){
 			fclose(fptr);
 		}else{
@@ -700,7 +704,7 @@ int mosquitto_tls_set(struct mosquitto *mosq, const char *cafile, const char *ca
 	}
 
 	if(keyfile){
-		fptr = _mosquitto_fopen(keyfile, "rt");
+		fptr = _mosquitto_fopen(keyfile, "rt", false);
 		if(fptr){
 			fclose(fptr);
 		}else{
@@ -912,6 +916,12 @@ int mosquitto_loop(struct mosquitto *mosq, int timeout, int max_packets)
 		timeout = (mosq->next_msg_out - now)*1000;
 	}
 
+	if(timeout < 0){
+		/* There has been a delay somewhere which means we should have already
+		 * sent a message. */
+		timeout = 0;
+	}
+
 	local_timeout.tv_sec = timeout/1000;
 #ifdef HAVE_PSELECT
 	local_timeout.tv_nsec = (timeout-local_timeout.tv_sec*1000)*1e6;
@@ -961,9 +971,10 @@ int mosquitto_loop(struct mosquitto *mosq, int timeout, int max_packets)
 				/* Fake write possible, to stimulate output write even though
 				 * we didn't ask for it, because at that point the publish or
 				 * other command wasn't present. */
-				FD_SET(mosq->sock, &writefds);
+				if(mosq->sock != INVALID_SOCKET)
+					FD_SET(mosq->sock, &writefds);
 			}
-			if(FD_ISSET(mosq->sock, &writefds)){
+			if(mosq->sock != INVALID_SOCKET && FD_ISSET(mosq->sock, &writefds)){
 #ifdef WITH_TLS
 				if(mosq->want_connect){
 					rc = mosquitto__socket_connect_tls(mosq);

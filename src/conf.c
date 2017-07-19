@@ -36,7 +36,7 @@ Contributors:
 #endif
 
 #if !defined(WIN32) && !defined(__CYGWIN__)
-#  include <sys/syslog.h>
+#  include <syslog.h>
 #endif
 
 #include <mosquitto_broker.h>
@@ -204,6 +204,7 @@ void mqtt3_config_init(struct mqtt3_config *config)
 	config->bridge_count = 0;
 #endif
 	config->auth_plugin = NULL;
+	config->auth_plugin_deny_special_chars = true;
 	config->verbose = false;
 	config->message_size_limit = 0;
 }
@@ -224,6 +225,7 @@ void mqtt3_config_cleanup(struct mqtt3_config *config)
 	if(config->persistence_file) _mosquitto_free(config->persistence_file);
 	if(config->persistence_filepath) _mosquitto_free(config->persistence_filepath);
 	if(config->psk_file) _mosquitto_free(config->psk_file);
+	if(config->pid_file) _mosquitto_free(config->pid_file);
 	if(config->listeners){
 		for(i=0; i<config->listener_count; i++){
 			if(config->listeners[i].host) _mosquitto_free(config->listeners[i].host);
@@ -308,7 +310,7 @@ void mqtt3_config_cleanup(struct mqtt3_config *config)
 static void print_usage(void)
 {
 	printf("mosquitto version %s (build date %s)\n\n", VERSION, TIMESTAMP);
-	printf("mosquitto is an MQTT v3.1 broker.\n\n");
+	printf("mosquitto is an MQTT v3.1.1/v3.1 broker.\n\n");
 	printf("Usage: mosquitto [-c config_file] [-d] [-h] [-p port]\n\n");
 	printf(" -c : specify the broker config file.\n");
 	printf(" -d : put the broker into the background after starting.\n");
@@ -668,6 +670,9 @@ int _config_read_file_core(struct mqtt3_config *config, bool reload, const char 
 				}else if(!strcmp(token, "auth_plugin")){
 					if(reload) continue; // Auth plugin not currently valid for reloading.
 					if(_conf_parse_string(&token, "auth_plugin", &config->auth_plugin, saveptr)) return MOSQ_ERR_INVAL;
+				}else if(!strcmp(token, "auth_plugin_deny_special_chars")){
+					if(reload) continue; // Auth plugin not currently valid for reloading.
+					if(_conf_parse_bool(&token, "auth_plugin_deny_special_chars", &config->auth_plugin_deny_special_chars, saveptr)) return MOSQ_ERR_INVAL;
 				}else if(!strcmp(token, "auto_id_prefix")){
 					if(_conf_parse_string(&token, "auto_id_prefix", &config->auto_id_prefix, saveptr)) return MOSQ_ERR_INVAL;
 					if(config->auto_id_prefix){
@@ -915,6 +920,14 @@ int _config_read_file_core(struct mqtt3_config *config, bool reload, const char 
 					if(reload) continue; // FIXME
 					token = strtok_r(NULL, " ", &saveptr);
 					if(token){
+						/* Check for existing bridge name. */
+						for(i=0; i<config->bridge_count; i++){
+							if(!strcmp(config->bridges[i].name, token)){
+								_mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Duplicate bridge name \"%s\".", token);
+								return MOSQ_ERR_INVAL;
+							}
+						}
+
 						config->bridge_count++;
 						config->bridges = _mosquitto_realloc(config->bridges, config->bridge_count*sizeof(struct _mqtt3_bridge));
 						if(!config->bridges){
@@ -1753,7 +1766,7 @@ int _config_read_file(struct mqtt3_config *config, bool reload, const char *file
 	int rc;
 	FILE *fptr = NULL;
 
-	fptr = _mosquitto_fopen(file, "rt");
+	fptr = _mosquitto_fopen(file, "rt", false);
 	if(!fptr){
 		_mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Unable to open config file %s\n", file);
 		return 1;

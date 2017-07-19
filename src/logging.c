@@ -69,8 +69,10 @@ int mqtt3_log_init(struct mqtt3_config *config)
 		if(drop_privileges(config, true)){
 			return 1;
 		}
-		config->log_fptr = _mosquitto_fopen(config->log_file, "at");
+		config->log_fptr = _mosquitto_fopen(config->log_file, "at", true);
 		if(!config->log_fptr){
+			log_destinations = MQTT3_LOG_STDERR;
+			log_priorities = MOSQ_LOG_ERR;
 			_mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Unable to open log file %s for writing.", config->log_file);
 			return MOSQ_ERR_INVAL;
 		}
